@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XML Processor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.4/codemirror.min.css" rel="stylesheet" />
+  <style>
+    #loading_spinner, #ba_loading_spinner {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1000;
+    }
+    .CodeMirror {
+      border: 1px solid #ddd;
+      height: 500px;
+      resize: both;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container mt-5">
+    <!-- File Upload Section (Input in Horizontal Alignment) -->
+    <div class="row">
+      <div class="col-md-6">
+        <div class="mb-3">
+          <label for="xmlFileInput" class="form-label">Choose Input XML File:</label>
+          <input type="file" id="xmlFileInput" class="form-control" accept=".xml" />
+        </div>
+      </div>
+      <div class="col-md-12 text-end">
+        <button class="btn btn-primary" id="processBtn" onclick="processXml()">Process</button>
+      </div>
+    </div>
+
+    <!-- Text Editor Section (Input, AI Generated Output) -->
+    <div class="row">
+      <div class="col-md-6">
+        <label for="inputXml">Input XML:</label>
+        <textarea id="inputXml" class="CodeMirror"></textarea>
+      </div>
+      <div class="col-md-6">
+        <label for="aiGeneratedOutput">AI Generated Output:</label>
+        <textarea id="aiGeneratedOutput" class="CodeMirror"></textarea>
+        <a id="aiDownloadLink" download="output.xml.out" class="btn btn-success float-end">Save the Script</a>
+      </div>
+    </div>
+
+    <!-- BA Input Section -->
+    <div class="row mt-5">
+      <div class="col-md-12">
+        <div class="mb-3">
+          <label for="baInput" class="form-label">Enter BA Inputs:</label>
+          <textarea id="baInput" class="form-control"></textarea>
+        </div>
+        <button class="btn btn-primary" id="processBaBtn" onclick="processBaPrompt(event)">Analysis</button>
+        <div id="ba_loading_spinner" style="display: none">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+        <div id="ba_error_alert" class="alert alert-danger" style="display: none"></div>
+      </div>
+    </div>
+
+    <!-- Updated Output Section -->
+    <div class="row mt-3">
+      <div class="col-md-12">
+        <label for="updatedOutputXml">Updated Output:</label>
+        <textarea id="updatedOutputXml" class="CodeMirror"></textarea>
+        <a id="baDownloadLink" download="updated_output.xml.out" class="btn btn-success float-end">Save the Updated Script</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.4/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.4/mode/xml/xml.min.js"></script>
+  <script>
+    // Initialize CodeMirror editors with VS Code-like styling and resizable
+    var inputXmlEditor = CodeMirror.fromTextArea(document.getElementById('inputXml'), {
+      mode: 'application/xml',
+      lineNumbers: true,
+      readOnly: false
+    });
+
+    // Initialize AI Generated Output box with default message
+    var aiGeneratedOutputEditor = CodeMirror.fromTextArea(document.getElementById('aiGeneratedOutput'), {
+      mode: 'application/xml',
+      lineNumbers: true,
+      readOnly: false
+    });
+
+    var updatedOutputXmlEditor = CodeMirror.fromTextArea(document.getElementById('updatedOutputXml'), {
+      mode: 'application/xml',
+      lineNumbers: true,
+      readOnly: false
+    });
+
+    // File handling for input XML
+    document.getElementById('xmlFileInput').addEventListener('change', function(event) {
+      handleFileUpload(event, inputXmlEditor);
+    });
+
+    function handleFileUpload(event, editor) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const content = event.target.result;
+        editor.setValue(content);
+      };
+      reader.readAsText(file);
+    }
+
+    // Process BA Prompt and display updated output
+    async function processBaPrompt(event) {
+      event.preventDefault();
+      const baInput = document.getElementById('baInput').value;
+
+      if (!baInput) {
+        alert('Please enter a BA prompt.');
+        return;
+      }
+
+      const textInputs = {
+        xmlContent: aiGeneratedOutputEditor.getValue(),
+        prompt: baInput  // BA input is passed here
+      };
+
+      document.getElementById('ba_loading_spinner').style.display = 'block';
+      document.getElementById('ba_error_alert').style.display = 'none';
+
+      try {
+        const response = await fetch('/process-ba-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(textInputs)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          updatedOutputXmlEditor.setValue(data.content);  // Set the updated content
+          document.getElementById('baDownloadLink').href = URL.createObjectURL(new Blob([data.content], { type: 'text/xml' }));
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error);
+        }
+      } catch (error) {
+        document.getElementById('ba_error_alert').textContent = error.message;
+        document.getElementById('ba_error_alert').style.display = 'block';
+      } finally {
+        document.getElementById('ba_loading_spinner').style.display = 'none';
+      }
+    }
+
+    async function processXml() {
+      const fileInput = document.getElementById('xmlFileInput').files[0];
+
+      if (!fileInput) {
+        alert('Please choose an input XML file.');
+        return;
+      }
+
+      aiGeneratedOutputEditor.setValue("Processing... After processing, AI generated output will be shown here.");
+
+      const formData = new FormData();
+      formData.append('file', fileInput);
+
+      try {
+        const response = await fetch('/process-xml', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          aiGeneratedOutputEditor.setValue(data.content);  // Update with AI-generated content
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error);
+        }
+      } catch (error) {
+        alert(`Error processing file: ${error.message}`);
+        aiGeneratedOutputEditor.setValue("An error occurred. Please try again.");  // Handle error
+      }
+    }
+
+    // Download AI Generated Output
+    document.getElementById('aiDownloadLink').addEventListener('click', function(event) {
+      event.preventDefault();
+      fetch('/download-ai-output')
+        .then(response => {
+          if (response.ok) {
+            return response.blob();
+          } else {
+            throw new Error('Failed to fetch AI generated output.');
+          }
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'output.xml.out';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        })
+        .catch(error => alert(error.message));
+    });
+
+  </script>
+</body>
+</html>
